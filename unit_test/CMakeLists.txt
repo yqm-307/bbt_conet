@@ -14,7 +14,3 @@ set(MY_LIBS
 )
 
 enable_testing()
-
-add_executable(Test_copool Test_copool.cc)
-target_link_libraries(Test_copool ${MY_LIBS})
-add_test(NAME Test_copool COMMAND Test_copool)

@@ -6,6 +6,7 @@ namespace bbt::network::conet::interface
 
 class IConnection
 {
+public:
     virtual void OnRecv(const char* byte, size_t len) = 0;
     virtual void Send(const char* byte, size_t len) = 0;
     virtual void OnSend(size_t len) = 0;
@@ -13,6 +14,7 @@ class IConnection
     virtual void OnTimeout() = 0;
     virtual void Disconnect() = 0;
     virtual bool IsDisconnected() = 0;
+    virtual int Socket() = 0;
 };
 
 } // namespace bbt::network::conet::interface

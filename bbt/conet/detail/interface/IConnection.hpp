@@ -14,7 +14,8 @@ public:
     virtual void OnTimeout() = 0;
     virtual void Disconnect() = 0;
     virtual bool IsDisconnected() = 0;
-    virtual int Socket() = 0;
+    virtual int  GetFd() = 0;
+    virtual void Close() = 0;
 };
 
 } // namespace bbt::network::conet::interface

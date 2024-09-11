@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Test_copool",
+            "name": "Test_eventloop",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/unit_test/Test_copool",
+            "program": "${workspaceFolder}/build/bin/unit_test/Test_eventloop",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build/bin/unit_test",

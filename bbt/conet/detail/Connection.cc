@@ -1,5 +1,6 @@
-#include <bbt/conet/detail/Connection.hpp>
 #include <bbt/coroutine/coroutine.hpp>
+#include <bbt/conet/detail/Connection.hpp>
+#include <bbt/conet/detail/Socket.hpp>
 
 namespace bbt::network::conet::detail
 {
@@ -36,8 +37,17 @@ void Connection::Disconnect()
 
 bool Connection::IsDisconnected()
 {
-
+    return true;
 }
 
+int Connection::GetFd()
+{
+    return m_socket->GetFd();
+}
+
+void Connection::Close()
+{
+
+}
 
 }

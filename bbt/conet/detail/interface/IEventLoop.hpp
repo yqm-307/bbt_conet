@@ -4,7 +4,8 @@
 namespace bbt::network::conet::interface
 {
 
-class IDispatcher
+template <typename TUData>
+class IEventLoop
 {
 public:
 
@@ -17,7 +18,7 @@ public:
      * @param callback 
      * @return TListenerId 返回的监听者id
      */
-    virtual int64_t RegListener(IConnection* udata, int events, int timeout, const std::function<void(IConnection*, short)>& callback) = 0;
+    virtual int64_t RegistEvent(TUData udata, int events, int timeout, const std::function<void(TUData, short)>& callback) = 0;
 
     /**
      * @brief 反注册一个监听者
@@ -25,7 +26,7 @@ public:
      * @param id 
      * @return int 0表示成功，-1失败
      */
-    virtual int UnRegListener(int64_t id) = 0;
+    virtual int UnRegistEvent(int64_t id) = 0;
 
     /**
      * @brief 监听者是否还存在
@@ -34,7 +35,7 @@ public:
      * @return true 
      * @return false 
      */
-    virtual bool HasListener(int64_t id) = 0;
+    virtual bool HasEvent(int64_t id) = 0;
 
 
     /**

@@ -14,3 +14,7 @@ set(MY_LIBS
 )
 
 enable_testing()
+
+add_executable(Test_eventloop Test_eventloop.cc)
+target_link_libraries(Test_eventloop ${MY_LIBS})
+add_test(NAME Test_eventloop COMMAND Test_eventloop)

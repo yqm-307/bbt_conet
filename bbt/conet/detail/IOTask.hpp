@@ -10,15 +10,7 @@ public:
     IOTask(const OnDispatchCallback& handle);
     virtual ~IOTask();
 
-    template<typename ...Args>
-    void Invoke(Args ...args) {
-        Assert(m_status != TASK_DONE && m_status != TASK_RUNNING);
-        if (m_status != TASK_CANCEL) {
-            m_status = TASK_RUNNING;
-            m_handle(args...);
-            m_status = TASK_DONE;
-        }
-    }
+    void Invoke(std::shared_ptr<interface::IConnection> conn, short event);
 
     int64_t GetId();
     int Cancel();

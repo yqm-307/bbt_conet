@@ -4,7 +4,7 @@
 #include <bbt/coroutine/coroutine.hpp>
 #include <bbt/coroutine/utils/lockfree/concurrentqueue.h>
 #include <bbt/conet/detail/interface/IConnection.hpp>
-#include <bbt/conet/detail/interface/IDispatcher.hpp>
+#include <bbt/conet/detail/interface/IEventLoop.hpp>
 #include <bbt/conet/detail/interface/IService.hpp>
 
 namespace bbt::network::conet
@@ -19,7 +19,7 @@ class TcpServer;
 class Socket;
 class IOTask;
 
-typedef int64_t ListenerId;
+typedef int64_t EventId;
 
 enum TaskStatus
 {
@@ -29,7 +29,7 @@ enum TaskStatus
     TASK_DONE       = 4,
 };
 
-typedef std::function<void(interface::IConnection*, short)> OnDispatchCallback;
+typedef std::function<void(std::shared_ptr<interface::IConnection>, short)> OnDispatchCallback;
 
 }
 

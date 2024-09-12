@@ -22,4 +22,5 @@ target_link_libraries(bbt_conet
     -lbbt_coroutine
 )
 
+enable_testing()
 add_subdirectory(unit_test)

@@ -9,12 +9,16 @@ set(MY_LIBS
     libboost_test_exec_monitor.so
     bbt_coroutine
     bbt_conet
+    event_core
     event_pthreads
     ybbt
 )
 
-enable_testing()
 
 add_executable(Test_eventloop Test_eventloop.cc)
 target_link_libraries(Test_eventloop ${MY_LIBS})
 add_test(NAME Test_eventloop COMMAND Test_eventloop)
+
+add_executable(Test_connection Test_connection.cc)
+target_link_libraries(Test_connection ${MY_LIBS})
+add_test(NAME Test_connection COMMAND Test_connection)

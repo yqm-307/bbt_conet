@@ -1,6 +1,5 @@
 #include <bbt/coroutine/coroutine.hpp>
 #include <bbt/conet/detail/Connection.hpp>
-#include <bbt/conet/detail/Socket.hpp>
 #include <bbt/conet/detail/EventLoop.hpp>
 
 
@@ -8,6 +7,7 @@ namespace bbt::network::conet::detail
 {
 
 Connection::Connection(std::shared_ptr<EventLoop> evloop, int fd, const IPAddress& addr, int timeout):
+    m_socket(fd),
     m_event_loop(evloop),
     m_last_active_time(bbt::clock::now<>()),
     m_input_buffer(new char[m_input_buffer_len])
@@ -114,7 +114,6 @@ int Connection::_OnSendEvent(std::shared_ptr<bbt::buffer::Buffer> buffer, short 
 {
     size_t len = 0;
 
-
     if (IsClosed()) 
         return -1;
 
@@ -133,9 +132,7 @@ int Connection::_OnSendEvent(std::shared_ptr<bbt::buffer::Buffer> buffer, short 
         m_send_event = -1;
         m_output_buffer_is_free.exchange(true);
     } else {
-        std::lock_guard<std::mutex> _(m_output_buffer_mtx);
-        Assert(m_output_buffer.DataSize() >= 0);
-        buffer->Swap(m_output_buffer);
+        _RegistASendEvent();
     }
 
     return 0;
@@ -174,12 +171,12 @@ std::optional<Errcode> Connection::_RegistASendEvent()
     if (eventloop == nullptr)
         return Errcode{"eventloop is released!"};
     
-    m_send_event = eventloop->RegistEvent(shared_from_this(), bbtco_emev_writeable | bbtco_emev_persist | bbtco_emev_finalize, -1,
+    m_send_event = eventloop->RegistEvent(shared_from_this(), bbtco_emev_writeable | bbtco_emev_finalize, -1,
     [wkthis, buffer_sptr](auto, short event){
         auto pthis = wkthis.lock();
         if (pthis == nullptr) return;
         if (event & bbtco_emev_writeable)
-            pthis->Send(buffer_sptr->Peek(), buffer_sptr->DataSize());
+            pthis->_OnSendEvent(buffer_sptr, event);
     });
 
     return std::nullopt;
@@ -198,7 +195,7 @@ void Connection::_Co()
 
     while (!IsClosed()) {
         
-        size_t len = ::read(m_socket, m_input_buffer, m_input_buffer_len);
+        int len = ::read(m_socket, m_input_buffer, m_input_buffer_len);
         if (len < 0) {
             printf("errno %d\n", errno);
             Assert(false);

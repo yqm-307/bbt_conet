@@ -17,7 +17,7 @@ IOTask::~IOTask()
 int64_t IOTask::GenId()
 {
     static std::atomic_int64_t id{0};
-    return id++;
+    return ++id;
 }
 
 void IOTask::Invoke(std::shared_ptr<interface::IConnection> conn, short event) {

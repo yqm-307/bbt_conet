@@ -34,7 +34,6 @@ private:
     std::optional<Errcode>          _RegistASendEvent();
     std::shared_ptr<EventLoop>      _GetEventLoop();
 private:
-    // Socket*                         m_socket{nullptr};
     std::weak_ptr<EventLoop>        m_event_loop;
     int                             m_socket{-1};
     IPAddress                       m_peer_addr;

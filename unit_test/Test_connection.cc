@@ -23,7 +23,10 @@ protected:
     }
 
     virtual void OnTimeout() override {}
-    virtual void OnSend(size_t len) override {}
+    virtual void OnSend(size_t len) override 
+    {
+        printf("[send] succ!\n");
+    }
     virtual void OnClose() override {}
     virtual void OnError(const bbt::network::Errcode& err) override {}
 };
@@ -76,7 +79,11 @@ BOOST_AUTO_TEST_CASE(t_connection_send_recv)
         BOOST_CHECK_MESSAGE(ret == 0, "[connect] errno=" << errno << "\tret=" << ret << "\tfd=" << fd);
 
         auto conn = std::make_shared<TestConn>(eventloop, fd, addr, 1000);
-        auto err = conn->Send(bbt::buffer::Buffer{msg});
+        auto err = conn->Run();
+        if (err != std::nullopt)
+            BOOST_ERROR(err->What());
+
+        err = conn->Send(bbt::buffer::Buffer{msg});
         if (err != std::nullopt)
             BOOST_ERROR(err->What());
 

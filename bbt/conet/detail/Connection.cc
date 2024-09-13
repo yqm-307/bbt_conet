@@ -6,7 +6,7 @@
 namespace bbt::network::conet::detail
 {
 
-Connection::Connection(std::shared_ptr<EventLoop> evloop, int fd, const IPAddress& addr, int timeout):
+Connection::Connection(std::shared_ptr<TIEventLoop> evloop, int fd, const IPAddress& addr, int timeout):
     m_socket(fd),
     m_event_loop(evloop),
     m_last_active_time(bbt::clock::now<>()),
@@ -184,7 +184,7 @@ std::optional<Errcode> Connection::_RegistASendEvent()
 
 std::shared_ptr<EventLoop> Connection::_GetEventLoop()
 {
-    return m_event_loop.lock();
+    return std::dynamic_pointer_cast<EventLoop>(m_event_loop.lock());
 }
 
 void Connection::_Co()
@@ -197,10 +197,17 @@ void Connection::_Co()
         
         int len = ::read(m_socket, m_input_buffer, m_input_buffer_len);
         if (len < 0) {
-            printf("errno %d\n", errno);
-            Assert(false);
+            if (errno == EINTR || errno == EAGAIN) {
+                OnError(Errcode{"please try again!", ERRTYPE_NETWORK_RECV_TRY_AGAIN});
+            } else if (errno == ECONNREFUSED) {
+                OnError(Errcode{"connect refused!", ERRTYPE_NETWORK_RECV_TRY_AGAIN});
+            } else {
+                OnError(Errcode{"other errno" + std::to_string(errno), ERRTYPE_NETWORK_RECV_OTHER_ERR});
+            }
+            continue;
         } else if (len == 0) {
             Close();
+            continue;
         }
 
         OnRecv(m_input_buffer, len);

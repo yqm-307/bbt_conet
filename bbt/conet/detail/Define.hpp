@@ -22,6 +22,7 @@ class EventLoop;
 class Socket;
 class IOTask;
 
+typedef interface::IEventLoop<std::shared_ptr<interface::IConnection>> TIEventLoop;
 typedef int64_t EventId;
 
 enum TaskStatus

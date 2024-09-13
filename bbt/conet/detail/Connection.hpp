@@ -10,7 +10,7 @@ class Connection:
     public std::enable_shared_from_this<Connection>
 {
 public:
-    explicit Connection(std::shared_ptr<EventLoop> evloop, int fd, const IPAddress& addr, int timeout);
+    explicit Connection(std::shared_ptr<TIEventLoop> evloop, int fd, const IPAddress& addr, int timeout);
     virtual ~Connection();
 
     std::optional<Errcode>          Run();
@@ -34,7 +34,7 @@ private:
     std::optional<Errcode>          _RegistASendEvent();
     std::shared_ptr<EventLoop>      _GetEventLoop();
 private:
-    std::weak_ptr<EventLoop>        m_event_loop;
+    std::weak_ptr<TIEventLoop>      m_event_loop;
     int                             m_socket{-1};
     IPAddress                       m_peer_addr;
     const int                       m_timeout{-1};  // 连接空闲关闭超时

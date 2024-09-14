@@ -11,16 +11,27 @@ TcpServer::TcpServer(std::shared_ptr<TIEventLoop> loop, const std::string& ip, s
 
 TcpServer::~TcpServer()
 {
+    Stop(true);
 }
-
 
 std::optional<Errcode> TcpServer::Start()
 {
-    
+    _ListenCo();
+    return std::nullopt;
+}
+
+void TcpServer::CoStart()
+{
+    bbtco [=](){
+        _ListenCo();
+    };
 }
 
 void TcpServer::Stop(bool sync)
 {
+    if (!m_is_running)
+        return;
+
     if (sync)
         m_latch = new bbt::thread::CountDownLatch{1};
 
@@ -36,7 +47,7 @@ void TcpServer::_ListenCo()
      * 监听协程主函数
      */
 
-    int listenfd = ::socket(AF_INET, SOCK_STREAM, -1);
+    int listenfd = ::socket(AF_INET, SOCK_STREAM, 0);
 
     int err = ::listen(listenfd, 1024);
     if (err != 0) {
@@ -46,7 +57,7 @@ void TcpServer::_ListenCo()
 
     while (m_is_running) {
         int client_socket = -1;
-        sockaddr client_addr;
+        sockaddr_in client_addr;
         socklen_t len = sizeof(client_addr);
         IPAddress addr;
 
@@ -56,8 +67,11 @@ void TcpServer::_ListenCo()
             continue;
         }
 
-        OnAccept(client_socket, &client_addr);
+        addr.set(client_addr);
+        OnAccept(client_socket, addr);
     }
+
+    ::close(listenfd);
 
     if (m_latch) {
         m_latch->Down();
@@ -65,7 +79,9 @@ void TcpServer::_ListenCo()
     }
 }
 
-
-
+std::shared_ptr<TIEventLoop> TcpServer::GetEventLoop()
+{
+    return m_event_loop.lock();
+}
 
 }

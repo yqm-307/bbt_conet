@@ -41,8 +41,8 @@ private:
     bbt::clock::Timestamp<>         m_last_active_time;
     ConnStatus                      m_run_status{CONN_DEFAULT};
 
-    EventId                         m_send_event{-1};
-    EventId                         m_timeout_event{-1};
+    volatile EventId                         m_send_event{-1};
+    volatile EventId                         m_timeout_event{-1};
 
     bbt::buffer::Buffer             m_output_buffer;
     std::atomic_bool                m_output_buffer_is_free{true};

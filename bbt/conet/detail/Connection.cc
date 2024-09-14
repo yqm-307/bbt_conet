@@ -105,6 +105,7 @@ std::optional<Errcode> Connection::Send(const bbt::buffer::Buffer& buf)
     if (!m_output_buffer_is_free.compare_exchange_strong(not_free, false)) {
         if (append_len != buf.DataSize())
             return Errcode{"output buffer not enough!"};
+        return std::nullopt;
     }
 
     return _RegistASendEvent();
@@ -132,6 +133,7 @@ int Connection::_OnSendEvent(std::shared_ptr<bbt::buffer::Buffer> buffer, short 
         m_send_event = -1;
         m_output_buffer_is_free.exchange(true);
     } else {
+        m_send_event = -1;
         _RegistASendEvent();
     }
 

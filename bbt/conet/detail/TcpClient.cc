@@ -26,11 +26,11 @@ void TcpClient::_ConnectCo(const std::string& ip, short port)
     
     int err = ::connect(socket, addr.getsockaddr(), addr.getsocklen());
     if (err != 0) {
-        if (err == EINTR || err == EINPROGRESS) {
+        if (errno == EINTR || errno == EINPROGRESS) {
             OnError(Errcode{"try again", ErrType::ERRTYPE_CONNECT_TRY_AGAIN});
         }
 
-        if (err == ECONNREFUSED)
+        if (errno == ECONNREFUSED)
             OnError(Errcode{"", ErrType::ERRTYPE_CONNECT_CONNREFUSED});
         
         ::close(socket);

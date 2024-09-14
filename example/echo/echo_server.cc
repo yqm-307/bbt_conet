@@ -38,7 +38,7 @@ int main()
 {
     auto eventloop = std::make_shared<bbt::conet::detail::EventLoop>(100, true);
 
-    EchoServer serv{eventloop, "127.0.0.1", 10101};
+    EchoServer serv{eventloop, "", 10101};
 
     serv.CoStart();
 

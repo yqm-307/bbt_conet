@@ -1,4 +1,5 @@
 #include <bbt/conet/detail/TcpServer.hpp>
+#include <bbt/base/net/SocketUtil.hpp>
 
 namespace bbt::network::conet::detail
 {
@@ -47,10 +48,9 @@ void TcpServer::_ListenCo()
      * 监听协程主函数
      */
 
-    int listenfd = ::socket(AF_INET, SOCK_STREAM, 0);
+    int listenfd = bbt::net::Util::CreateListen(m_listen_addr.GetIP().c_str(), m_listen_addr.GetPort(), true);
 
-    int err = ::listen(listenfd, 1024);
-    if (err != 0) {
+    if (listenfd < 0) {
         OnError(Errcode{"tcp server listen failed! ip=" + m_listen_addr.GetIPPort() + " errno=" + std::to_string(errno), network::ErrType::ERRTYPE_ERROR});
         return;
     }
@@ -61,8 +61,8 @@ void TcpServer::_ListenCo()
         socklen_t len = sizeof(client_addr);
         IPAddress addr;
 
-        err =  ::accept(client_socket, (sockaddr*)&client_addr, &len);
-        if (err != 0) {
+        client_socket =  ::accept(listenfd, (sockaddr*)&client_addr, &len);
+        if (client_socket < 0) {
             OnError(Errcode{"accpet error! errno=" + std::to_string(errno), network::ErrType::ERRTYPE_ERROR});
             continue;
         }

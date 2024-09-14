@@ -21,7 +21,7 @@ public:
 
     virtual void OnError(const bbt::network::Errcode& err)
     {
-        printf("[echo serv] %s\n", err.CWhat());
+        printf("[echo serv] [error] %s\n", err.CWhat());
     }
 };
 

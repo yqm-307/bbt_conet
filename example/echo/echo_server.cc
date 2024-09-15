@@ -12,16 +12,6 @@ public:
 
     virtual ~EchoServer() {}
 
-    virtual void OnConnect(int socket, const bbt::conet::IPAddress& addr)
-    {
-        auto conn = std::make_shared<EchoConn>(GetEventLoop(), socket, addr, 1000);
-        bbtco [conn]{
-            for (int i = 0; i < 10000; ++i) {
-                conn->Send(bbt::buffer::Buffer{"hello world"});
-            }
-        };
-    }
-
     virtual void OnError(const bbt::network::Errcode& err) override
     {
         printf("[echo serv] %s\n", err.CWhat());

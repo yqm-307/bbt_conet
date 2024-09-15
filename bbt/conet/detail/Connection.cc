@@ -7,8 +7,9 @@ namespace bbt::network::conet::detail
 {
 
 Connection::Connection(std::shared_ptr<TIEventLoop> evloop, int fd, const IPAddress& addr, int timeout):
-    m_socket(fd),
     m_event_loop(evloop),
+    m_socket(fd),
+    m_timeout(timeout),
     m_last_active_time(bbt::clock::now<>()),
     m_input_buffer(new char[m_input_buffer_len])
 {
@@ -34,20 +35,23 @@ std::optional<Errcode> Connection::Run()
         return Errcode{"eventloop is released!"};
 
     /* 连接主循环会在连接关闭后退出 */
-    bbtco [=](){ pthis->_Co(); };
+    // bbtco [=](){ pthis->_Co(); };
 
-    auto wkthis = weak_from_this();
     /* 超时事件会在连接关闭后释放掉 */
-    m_timeout_event = eventloop->RegistEvent(shared_from_this(), bbtco_emev_timeout | bbtco_emev_persist | bbtco_emev_finalize, m_timeout, [wkthis](auto, short event){
-        if (wkthis.expired())
-            return;
+    // m_timeout_event = eventloop->RegistEvent(shared_from_this(), bbtco_emev_timeout | bbtco_emev_persist | bbtco_emev_finalize, m_timeout,
+    // [pthis](auto, short event){
+        // pthis->_CoTimeout();
+    // });
 
-        auto conn = wkthis.lock();
-        if (bbt::clock::is_expired<bbt::clock::ms>(conn->m_last_active_time + bbt::clock::ms(conn->m_timeout)))
-            conn->OnTimeout();
-    });
+    m_main_event = eventloop->RegistEvent(shared_from_this(),
+        bbtco_emev_close |
+        bbtco_emev_persist |
+        bbtco_emev_readable,
+        m_timeout,
+        [pthis](auto, short events){ pthis->_OnMainEvent(events); }
+    );
 
-    if (m_timeout_event <= 0)
+    if (m_main_event <= 0)
         return Errcode{"eventloop regist connect timeout event failed!"};
 
     return std::nullopt;
@@ -60,7 +64,7 @@ void Connection::OnTimeout()
 
 bool Connection::IsClosed() const
 {
-    return (m_run_status == CONN_DISCONNECTED);
+    return (m_run_status >= CONN_CLOSE);
 }
 
 int Connection::GetFd() const
@@ -75,16 +79,51 @@ const IPAddress& Connection::GetPeerAddr() const
 
 void Connection::Close()
 {
+    std::unique_lock<std::mutex> lock{m_mutex};
+
+    /**
+     * 如果有正在进行的发送事件，设置连接状态，等发送事件完成后再关闭连接
+     * 如果没有正在进行的发送事件，直接Shutdown
+     */
+
+    if (IsClosed())
+        return;
+
+    if (!m_send_event_is_in_progress && m_send_event < 0) {
+        _Shutdown();
+        return;
+    }
+
+    m_run_status = CONN_CLOSE;
+
+    /* 先关闭超时事件 */
+    if (m_timeout_event > 0) {
+        auto eventloop = _GetEventLoop();
+        if (eventloop != nullptr)
+            Assert(eventloop->UnRegistEvent(m_timeout_event) == 0);
+        
+        m_timeout_event = -1;
+    }
+}
+
+void Connection::Shutdown()
+{
+    std::lock_guard<std::mutex> lock{m_mutex};
+    _Shutdown();
+}
+
+void Connection::_Shutdown()
+{
     if (m_run_status == CONN_DISCONNECTED)
         return;
-    
+
     m_run_status = CONN_DISCONNECTED;
 
     if (m_timeout_event > 0) {
         auto eventloop = _GetEventLoop();
         if (eventloop != nullptr)
             Assert(eventloop->UnRegistEvent(m_timeout_event) == 0);
-
+        
         m_timeout_event = -1;
     }
 
@@ -94,17 +133,19 @@ void Connection::Close()
     OnClose();
 }
 
+
 std::optional<Errcode> Connection::Send(const bbt::buffer::Buffer& buf)
 {
     if (IsClosed()) {
         return Errcode{"connection is closed!"};
     }
 
-    bool not_free = true;
+    bool not_in_progress = false;
     int append_len = _AppendOutputBuffer(buf.Peek(), buf.DataSize());
-    if (!m_output_buffer_is_free.compare_exchange_strong(not_free, false)) {
-        if (append_len != buf.DataSize())
-            return Errcode{"output buffer not enough!"};
+    if (append_len != buf.DataSize())
+        return Errcode{"output buffer not enough!"};
+
+    if (!m_send_event_is_in_progress.compare_exchange_strong(not_in_progress, true)) {
         return std::nullopt;
     }
 
@@ -115,8 +156,11 @@ int Connection::_OnSendEvent(std::shared_ptr<bbt::buffer::Buffer> buffer, short 
 {
     size_t len = 0;
 
-    if (IsClosed()) 
+    std::unique_lock<std::mutex> lock{m_mutex};
+    if (m_run_status == CONN_DISCONNECTED)
         return -1;
+
+    lock.unlock();
 
     if (event & bbtco_emev_timeout) {
     } else if(event & bbtco_emev_writeable) {
@@ -125,13 +169,21 @@ int Connection::_OnSendEvent(std::shared_ptr<bbt::buffer::Buffer> buffer, short 
 
     OnSend(len);
 
-    if (IsClosed() || m_output_buffer.DataSize() <= 0) {
+    lock.lock();
+    /**
+     * 发送完毕后，若缓冲区还有数据且连接没有处于断开状态，继续注册发送事件
+     * 若处于close状态，则Shutdown
+     */
+    if (m_run_status == CONN_DISCONNECTED || m_output_buffer.DataSize() <= 0) {
         auto eventloop = _GetEventLoop();
         if (eventloop)
             eventloop->UnRegistEvent(m_send_event);
         
         m_send_event = -1;
-        m_output_buffer_is_free.exchange(true);
+        m_send_event_is_in_progress.exchange(true);
+
+        if (m_run_status == CONN_CLOSE)
+            _Shutdown();
     } else {
         m_send_event = -1;
         _RegistASendEvent();
@@ -160,7 +212,7 @@ int Connection::_AppendOutputBuffer(const char* data, size_t len)
 
 std::optional<Errcode> Connection::_RegistASendEvent()
 {
-    AssertWithInfo(!m_output_buffer_is_free.load(), "output buffer must be free!");
+    AssertWithInfo(m_send_event_is_in_progress.load(), "output buffer must be free!");
     AssertWithInfo(m_send_event <= 0, "must no send event!");
     auto buffer_sptr = std::make_shared<bbt::buffer::Buffer>();
     {
@@ -216,6 +268,43 @@ void Connection::_Co()
     }
 }
 
+void Connection::_CoTimeout()
+{
+
+    /**
+     * 如果连接已经关闭了，那么这个超时检测应该被释放掉
+     */
+    if (IsClosed()) {
+        auto eventloop = _GetEventLoop();
+        if (eventloop)
+            eventloop->UnRegistEvent(m_send_event);
+
+        m_timeout_event = -1;
+        return;
+    }
+
+    if (bbt::clock::is_expired<bbt::clock::ms>(m_last_active_time + bbt::clock::ms(m_timeout)))
+        OnTimeout();
+
+
+}
+
+void Connection::_OnMainEvent(short event)
+{
+    /* 若已经关闭了，释放此事件 */
+    if (IsClosed()) {
+        auto eventloop = _GetEventLoop();
+        if (eventloop)
+            eventloop->UnRegistEvent(m_main_event);
+        
+        m_main_event = -1;
+        return;
+    }
+
+
+    /* 处理事件 */
+    
+}
 
 
 }

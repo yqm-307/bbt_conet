@@ -12,6 +12,7 @@ public:
     virtual void OnClose() = 0;
     virtual void OnTimeout() = 0;
     virtual void Close() = 0;
+    virtual void Shutdown() = 0;
     virtual bool IsClosed() const = 0;
     virtual int  GetFd() const = 0;
 };

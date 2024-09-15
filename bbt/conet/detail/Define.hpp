@@ -37,7 +37,8 @@ enum ConnStatus
 {
     CONN_DEFAULT    = 1,
     CONN_CONNECTED  = 2,
-    CONN_DISCONNECTED = 3,
+    CONN_CLOSE      = 3,
+    CONN_DISCONNECTED = 4,
 };
 
 typedef std::function<void(std::shared_ptr<interface::IConnection>, short)> OnDispatchCallback;

@@ -16,6 +16,7 @@ public:
     std::optional<Errcode>          Run();
     virtual std::optional<Errcode>  Send(const bbt::buffer::Buffer& buf) final;
     virtual void                    Close() override final;
+    virtual void                    Shutdown() override final;
     virtual bool                    IsClosed() const override final;
     virtual int                     GetFd() const override final;
     virtual const IPAddress&        GetPeerAddr() const final;
@@ -30,9 +31,12 @@ private:
     virtual int                     Send(const char* byte, size_t len) override;
     int                             _OnSendEvent(std::shared_ptr<bbt::buffer::Buffer> buffer, short event);
     void                            _Co();
+    void                            _CoTimeout();
     int                             _AppendOutputBuffer(const char* data, size_t len);
     std::optional<Errcode>          _RegistASendEvent();
     std::shared_ptr<EventLoop>      _GetEventLoop();
+    void                            _Shutdown();
+    void                            _OnMainEvent(short event);
 private:
     std::weak_ptr<TIEventLoop>      m_event_loop;
     int                             m_socket{-1};
@@ -40,12 +44,14 @@ private:
     const int                       m_timeout{-1};  // 连接空闲关闭超时
     bbt::clock::Timestamp<>         m_last_active_time;
     ConnStatus                      m_run_status{CONN_DEFAULT};
+    std::mutex                      m_mutex;    // 状态管理的锁
 
-    volatile EventId                         m_send_event{-1};
-    volatile EventId                         m_timeout_event{-1};
+    volatile EventId                m_send_event{-1};
+    EventId                         m_main_event{-1};
+    // volatile EventId                m_timeout_event{-1};
 
     bbt::buffer::Buffer             m_output_buffer;
-    std::atomic_bool                m_output_buffer_is_free{true};
+    std::atomic_bool                m_send_event_is_in_progress{false};  // 是否正在进行发送事件
     std::mutex                      m_output_buffer_mtx;
     const int                       m_input_buffer_len{4096};
     char*                           m_input_buffer{nullptr};

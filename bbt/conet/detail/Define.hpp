@@ -41,7 +41,7 @@ enum ConnStatus
     CONN_DISCONNECTED = 4,
 };
 
-typedef std::function<void(std::shared_ptr<interface::IConnection>, short)> OnDispatchCallback;
+typedef std::function<bool(std::shared_ptr<interface::IConnection>, short)> OnDispatchCallback;
 
 }
 

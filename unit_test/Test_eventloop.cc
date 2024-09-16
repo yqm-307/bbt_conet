@@ -20,6 +20,7 @@ BOOST_AUTO_TEST_CASE(t_event_notify)
         BOOST_ASSERT(null == nullptr);
         BOOST_ASSERT(ev == bbtco_emev_timeout);
         flag = 1;
+        return false;
     });
 
     std::this_thread::sleep_for(bbt::clock::ms(200));
@@ -30,6 +31,7 @@ BOOST_AUTO_TEST_CASE(t_cancel_event)
 {
     auto id = eventloop->RegistEvent(nullptr, bbtco_emev_timeout, 100, [&](auto null, short ev){
         BOOST_ASSERT(false);
+        return false;
     });
 
     BOOST_ASSERT(id > 0);

@@ -3,11 +3,6 @@
 namespace bbt::network::conet::detail
 {
 
-std::shared_ptr<interface::IConnection> TcpClient::Connect(const std::string& ip, short port)
-{
-    CoConnect(ip, port);
-}
-
 void TcpClient::CoConnect(const std::string& ip, short port)
 {
     bbtco [=](){
@@ -15,29 +10,41 @@ void TcpClient::CoConnect(const std::string& ip, short port)
     };
 }
 
-void TcpClient::_ConnectCo(const std::string& ip, short port)
+TcpClient::ConnectResult TcpClient::Connect(const std::string& ip, short port)
 {
+    return _ConnectCo(ip, port);
+}
+
+TcpClient::ConnectResult TcpClient::_ConnectCo(const std::string& ip, short port)
+{
+    /**
+     * 调用此函数表现分为两种情况
+     * 1、在协程线程中执行
+     * 2、在非协程线程中执行
+     * 
+     * 这里处理connect时是视为在非协程线程中执行，因为协程执行是兼容
+     * 非协程执行的。
+     * 
+     */
     IPAddress addr{ip, port};
     int socket = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (socket < 0) {
-        OnError(Errcode{"tcpclient socket() error! errno=" + std::to_string(errno)});
-        return;
-    }
+    if (socket < 0)
+        return {Errcode{"tcpclient socket() error! errno=" + std::to_string(errno)}, nullptr};
     
     int err = ::connect(socket, addr.getsockaddr(), addr.getsocklen());
     if (err != 0) {
-        if (errno == EINTR || errno == EINPROGRESS) {
-            OnError(Errcode{"try again", ErrType::ERRTYPE_CONNECT_TRY_AGAIN});
-        }
+        Errcode err{""};
+        if (errno == EINTR || errno == EINPROGRESS)
+            err = Errcode{"try again", ErrType::ERRTYPE_CONNECT_TRY_AGAIN};
 
         if (errno == ECONNREFUSED)
-            OnError(Errcode{"", ErrType::ERRTYPE_CONNECT_CONNREFUSED});
+            err = Errcode{"connect refused", ErrType::ERRTYPE_CONNECT_CONNREFUSED};
         
         ::close(socket);
-        return;
+        return {err, nullptr};
     }
 
-    OnConnect(socket, addr);
+    return OnConnect(socket, addr);
 }
 
 std::shared_ptr<TIEventLoop> TcpClient::GetEventLoop()

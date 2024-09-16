@@ -8,13 +8,12 @@ EventLoop::EventLoop(size_t copool_size, bool auto_dispatch):
     m_auto_dispatch(auto_dispatch)
 {
     g_scheduler->Start(m_auto_dispatch ? bbt::coroutine::SCHE_START_OPT_SCHE_THREAD : bbt::coroutine::SCHE_START_OPT_SCHE_NO_LOOP);
-    m_co_pool = new bbt::coroutine::pool::CoPool(copool_size);
+    m_co_pool = bbtco_make_copool(copool_size);
 }
 
 EventLoop::~EventLoop()
 {
     m_co_pool->Release();
-    delete m_co_pool;
     m_co_pool = nullptr;
     g_scheduler->Stop();
 }
@@ -24,7 +23,7 @@ EventId EventLoop::RegistEvent(std::shared_ptr<interface::IConnection> udata, in
     int socket = udata ? udata->GetFd() : -1;
 
     auto* task = new IOTask{[=](std::shared_ptr<interface::IConnection> conn, short event){
-        callback(conn, event);
+        return callback(conn, event);
     }};
 
     std::lock_guard<std::mutex> lock{m_task_map_mtx};
@@ -36,15 +35,15 @@ EventId EventLoop::RegistEvent(std::shared_ptr<interface::IConnection> udata, in
     /**
      * 这个事件是一定会触发的（除非event设置的有问题）
      */
-    __bbtco_event_regist_ex(
+    __bbtco_event_regist_with_copool_ex(
         socket,
         events,
-        timeout
+        timeout,
+        m_co_pool
     ) [=](int fd, short event){
-        Assert(this->m_co_pool->Submit([=](){
-            task->Invoke(udata, event);
-            _OnEvent(task->GetId());
-        }) == 0);
+        auto can_continue = task->Invoke(udata, event);
+        _OnEvent(task->GetId(), can_continue);
+        return can_continue;
     };
 
     return id;
@@ -75,10 +74,15 @@ bool EventLoop::HasEvent(EventId id)
     return (it != m_task_map.end());
 }
 
-void EventLoop::_OnEvent(EventId id)
+void EventLoop::_OnEvent(EventId id, bool can_continue)
 {
+    if (can_continue) return;
+
     std::unique_lock<std::mutex> lock{m_task_map_mtx};
     auto it = m_task_map.find(id);
+    if (m_task_map.end() == it)
+        return;
+
     auto* task = it->second;
     Assert(m_task_map.erase(id) > 0);
 

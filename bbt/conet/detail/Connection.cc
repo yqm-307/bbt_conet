@@ -34,21 +34,11 @@ std::optional<Errcode> Connection::Run()
     if (eventloop == nullptr)
         return Errcode{"eventloop is released!"};
 
-    /* 连接主循环会在连接关闭后退出 */
-    // bbtco [=](){ pthis->_Co(); };
-
-    /* 超时事件会在连接关闭后释放掉 */
-    // m_timeout_event = eventloop->RegistEvent(shared_from_this(), bbtco_emev_timeout | bbtco_emev_persist | bbtco_emev_finalize, m_timeout,
-    // [pthis](auto, short event){
-        // pthis->_CoTimeout();
-    // });
-
     m_main_event = eventloop->RegistEvent(shared_from_this(),
         bbtco_emev_close |
-        bbtco_emev_persist |
         bbtco_emev_readable,
         m_timeout,
-        [pthis](auto, short events){ pthis->_OnMainEvent(events); }
+        [pthis](auto, short events){ return pthis->_OnMainEvent(events); }
     );
 
     if (m_main_event <= 0)
@@ -96,14 +86,6 @@ void Connection::Close()
 
     m_run_status = CONN_CLOSE;
 
-    /* 先关闭超时事件 */
-    if (m_timeout_event > 0) {
-        auto eventloop = _GetEventLoop();
-        if (eventloop != nullptr)
-            Assert(eventloop->UnRegistEvent(m_timeout_event) == 0);
-        
-        m_timeout_event = -1;
-    }
 }
 
 void Connection::Shutdown()
@@ -118,14 +100,6 @@ void Connection::_Shutdown()
         return;
 
     m_run_status = CONN_DISCONNECTED;
-
-    if (m_timeout_event > 0) {
-        auto eventloop = _GetEventLoop();
-        if (eventloop != nullptr)
-            Assert(eventloop->UnRegistEvent(m_timeout_event) == 0);
-        
-        m_timeout_event = -1;
-    }
 
     Assert(m_socket >= 0);
     ::close(m_socket);
@@ -180,7 +154,7 @@ int Connection::_OnSendEvent(std::shared_ptr<bbt::buffer::Buffer> buffer, short 
             eventloop->UnRegistEvent(m_send_event);
         
         m_send_event = -1;
-        m_send_event_is_in_progress.exchange(true);
+        m_send_event_is_in_progress.exchange(false);
 
         if (m_run_status == CONN_CLOSE)
             _Shutdown();
@@ -228,68 +202,46 @@ std::optional<Errcode> Connection::_RegistASendEvent()
     m_send_event = eventloop->RegistEvent(shared_from_this(), bbtco_emev_writeable | bbtco_emev_finalize, -1,
     [wkthis, buffer_sptr](auto, short event){
         auto pthis = wkthis.lock();
-        if (pthis == nullptr) return;
+        if (pthis == nullptr) return false;
         if (event & bbtco_emev_writeable)
             pthis->_OnSendEvent(buffer_sptr, event);
+
+        return false;
     });
 
     return std::nullopt;
 }
+
+std::optional<Errcode> Connection::_RegistAMainEvent()
+{
+    auto pthis = shared_from_this();
+    if (pthis == nullptr)
+        return Errcode{"please use std::shared_ptr instead of raw pointer!"};
+
+    auto eventloop = _GetEventLoop();
+    if (eventloop == nullptr)
+        return Errcode{"eventloop is released!"};
+
+    m_main_event = eventloop->RegistEvent(shared_from_this(),
+        bbtco_emev_close |
+        bbtco_emev_readable,
+        m_timeout,
+        [=](auto, short events){ return pthis->_OnMainEvent(events); }
+    );
+
+    if (m_main_event <= 0)
+        return Errcode{"eventloop regist connect timeout event failed!"};
+
+    return std::nullopt;
+}
+
 
 std::shared_ptr<EventLoop> Connection::_GetEventLoop()
 {
     return std::dynamic_pointer_cast<EventLoop>(m_event_loop.lock());
 }
 
-void Connection::_Co()
-{
-    /**
-     * 这个函数是协程Connection的协程主函数
-     */
-
-    while (!IsClosed()) {
-        
-        int len = ::read(m_socket, m_input_buffer, m_input_buffer_len);
-        if (len < 0) {
-            if (errno == EINTR || errno == EAGAIN) {
-                OnError(Errcode{"please try again!", ERRTYPE_NETWORK_RECV_TRY_AGAIN});
-            } else if (errno == ECONNREFUSED) {
-                OnError(Errcode{"connect refused!", ERRTYPE_NETWORK_RECV_TRY_AGAIN});
-            } else {
-                OnError(Errcode{"other errno" + std::to_string(errno), ERRTYPE_NETWORK_RECV_OTHER_ERR});
-            }
-            continue;
-        } else if (len == 0) {
-            Close();
-            continue;
-        }
-
-        OnRecv(m_input_buffer, len);
-    }
-}
-
-void Connection::_CoTimeout()
-{
-
-    /**
-     * 如果连接已经关闭了，那么这个超时检测应该被释放掉
-     */
-    if (IsClosed()) {
-        auto eventloop = _GetEventLoop();
-        if (eventloop)
-            eventloop->UnRegistEvent(m_send_event);
-
-        m_timeout_event = -1;
-        return;
-    }
-
-    if (bbt::clock::is_expired<bbt::clock::ms>(m_last_active_time + bbt::clock::ms(m_timeout)))
-        OnTimeout();
-
-
-}
-
-void Connection::_OnMainEvent(short event)
+bool Connection::_OnMainEvent(short event)
 {
     /* 若已经关闭了，释放此事件 */
     if (IsClosed()) {
@@ -298,12 +250,65 @@ void Connection::_OnMainEvent(short event)
             eventloop->UnRegistEvent(m_main_event);
         
         m_main_event = -1;
-        return;
+        return false;
     }
 
 
     /* 处理事件 */
-    
+    if (event & bbtco_emev_close) {
+        Close();
+    } else if (event & bbtco_emev_timeout) {
+        OnTimeout();
+        Close();
+    } else if (event & bbtco_emev_readable) {
+        auto err = _Recv();
+        if (err && err->IsErr() && err->Type() == network::ERRTYPE_NETWORK_RECV_EOF)
+            Close();
+        else if (err)
+            OnError(err.value());
+        else
+            _RegistAMainEvent();
+    } else {
+        OnError(Errcode{"unknown event=" + std::to_string(event)});
+    }
+
+    return false;
+}
+
+std::optional<Errcode> Connection::_Recv()
+{
+    int err = 0;
+    int read_len = 0;
+    Errcode errcode{"", ERRTYPE_NOTHING};
+
+
+    if (IsClosed()) {
+        return Errcode{"conn is closed, but event was not cancel! peer:" + GetPeerAddr().GetIPPort()};
+    }
+
+    read_len = ::read(m_socket, m_input_buffer, m_input_buffer_len);
+
+    if (read_len == -1) {
+        if (errno == EINTR || errno == EAGAIN) {
+            errcode = Errcode{"please try again!", ERRTYPE_NETWORK_RECV_TRY_AGAIN};
+        } else if (errno == ECONNREFUSED) {
+            errcode = Errcode{"connect refused!", ERRTYPE_NETWORK_RECV_CONNREFUSED};
+        } else {
+            errcode = Errcode{"other errno! errno=" + std::to_string(errno), ERRTYPE_NETWORK_RECV_OTHER_ERR};
+        }
+    } else if (read_len == 0) {
+        errcode = Errcode{"peer connect closed!", ERRTYPE_NETWORK_RECV_EOF};
+    } else if (read_len < -1) {
+        errcode = Errcode{"other errno! errno=" + std::to_string(errno), ERRTYPE_NETWORK_RECV_OTHER_ERR};
+    }
+
+    if (errcode.IsErr()) {
+        return errcode;
+    }
+
+    OnRecv(m_input_buffer, read_len);
+
+    return std::nullopt;
 }
 
 

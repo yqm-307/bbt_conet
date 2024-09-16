@@ -17,7 +17,8 @@ public:
 
     virtual void OnRecv(const char* byte, size_t len) override
     {
-        printf("[echoconn][onrecv] %s\n", byte);
+        n_recv += len;
+        printf("[echoconn][onrecv] recv bytes=%ld\n", len);
     }
 
     virtual void OnTimeout() override
@@ -32,7 +33,7 @@ public:
 
     virtual void OnClose() override
     {
-        printf("[echoconn][onclose]\n");
+        printf("[echoconn][onclose] total recv=%ld\n", n_recv);
     }
 
     virtual void OnError(const bbt::network::Errcode& err) override
@@ -40,4 +41,5 @@ public:
         printf("[echoconn][onerror] %s\n", err.CWhat());
     }
 private:
+    size_t n_recv{0};
 };

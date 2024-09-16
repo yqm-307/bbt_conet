@@ -9,7 +9,7 @@ public:
     EchoClient(std::shared_ptr<bbt::conet::detail::EventLoop> eventloop):bbt::conet::TcpClient(eventloop) {}
     virtual ~EchoClient() {}
 
-    virtual void OnConnect(int socket, const bbt::conet::IPAddress& addr)
+    virtual ConnectResult OnConnect(int socket, const bbt::conet::IPAddress& addr)
     {
         auto conn = std::make_shared<EchoConn>(GetEventLoop(), socket, addr, 1000);
         conn->Run();
@@ -20,6 +20,8 @@ public:
 
             // conn->Close();
         };
+
+        return {std::nullopt, conn};
     }
 
     virtual void OnError(const bbt::network::Errcode& err)
@@ -36,7 +38,5 @@ int main()
 
     client.CoConnect("127.0.0.1", 10101);
 
-    while(true) {
-        sleep(1);
-    }
+    sleep(3);
 }

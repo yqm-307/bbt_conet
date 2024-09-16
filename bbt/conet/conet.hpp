@@ -10,5 +10,7 @@ using namespace bbt::network::conet;
 
 typedef bbt::network::conet::detail::TcpClient TcpClient;
 typedef bbt::network::conet::detail::TcpServer TcpServer;
+typedef bbt::network::conet::detail::Connection Connection;
+typedef detail::TIEventLoop TIEventLoop;
 
 }

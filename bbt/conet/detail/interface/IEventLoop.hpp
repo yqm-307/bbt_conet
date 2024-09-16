@@ -18,7 +18,7 @@ public:
      * @param callback 
      * @return TListenerId 返回的监听者id
      */
-    virtual int64_t RegistEvent(TUData udata, int events, int timeout, const std::function<void(TUData, short)>& callback) = 0;
+    virtual int64_t RegistEvent(TUData udata, int events, int timeout, const std::function<bool(TUData, short)>& callback) = 0;
 
     /**
      * @brief 反注册一个监听者

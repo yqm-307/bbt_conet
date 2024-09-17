@@ -19,7 +19,7 @@ public:
 
     virtual void OnAccept(int socket, const bbt::conet::IPAddress& addr) override
     {
-        auto conn = std::make_shared<EchoConn>(GetEventLoop(), socket, addr, 1000);
+        auto conn = std::make_shared<EchoConn<true>>(GetEventLoop(), socket, addr, 1000);
         conn->Run();
     }
 };

@@ -1,6 +1,7 @@
 #pragma once
 #include <bbt/conet/conet.hpp>
 
+template<bool CanEcho>
 class EchoConn:
     public bbt::conet::detail::Connection
 {
@@ -18,7 +19,9 @@ public:
     virtual void OnRecv(const char* byte, size_t len) override
     {
         n_recv += len;
-        printf("[echoconn][onrecv] recv bytes=%ld\n", len);
+        printf("[echoconn][onrecv] recv %ld bytes\n", len);
+        if (CanEcho)
+            Send(bbt::buffer::Buffer{byte, len});
     }
 
     virtual void OnTimeout() override

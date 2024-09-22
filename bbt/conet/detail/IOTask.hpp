@@ -1,5 +1,6 @@
 #pragma once
 #include <bbt/conet/detail/Define.hpp>
+#include <bbt/coroutine/sync/StdLockWapper.hpp>
 
 namespace bbt::network::conet::detail
 {
@@ -40,8 +41,10 @@ private:
     TaskStatus              m_status{TASK_LISTENING};
     OnDispatchCallback      m_handle{nullptr};
     int64_t                 m_id{0};
-    bbt::coroutine::sync::CoMutex::SPtr
-                            m_co_mtx{nullptr};
+    bbt::co::sync::StdLockWapper
+                            m_co_mtx;
+    // bbt::coroutine::sync::CoMutex::SPtr
+    //                         m_co_mtx{nullptr};
 };
 
 }

@@ -21,6 +21,7 @@ public:
     {
         auto conn = std::make_shared<EchoConn<true>>(GetEventLoop(), socket, addr, 1000);
         conn->Run();
+        printf("[echo serv] on accept! %d %s\n", socket, addr.GetIPPort().c_str());
     }
 };
 

@@ -23,7 +23,7 @@ int64_t IOTask::GenId()
 
 bool IOTask::Invoke(std::shared_ptr<interface::IConnection> conn, short event) {
     bool can_continue = false;
-    m_co_mtx->Lock();
+    std::unique_lock<bbt::co::sync::StdLockWapper> lock{m_co_mtx};
     Assert(m_status != TASK_RUNNING);
     if (m_status == TASK_DONE)
         return can_continue;
@@ -31,10 +31,13 @@ bool IOTask::Invoke(std::shared_ptr<interface::IConnection> conn, short event) {
 
     if (m_status != TASK_CANCEL) {
         m_status = TASK_RUNNING;
+        lock.unlock();
         can_continue = m_handle(conn, event);
+
+        lock.lock();
         m_status = can_continue ? TASK_LISTENING : TASK_DONE;
     }
-    m_co_mtx->UnLock();
+
     return can_continue;
 }
 
@@ -45,14 +48,12 @@ int64_t IOTask::GetId()
 
 int IOTask::Cancel()
 {
-    m_co_mtx->Lock();
+    std::unique_lock<bbt::co::sync::StdLockWapper> lock{m_co_mtx};
     if (m_status != TASK_LISTENING) {
-        m_co_mtx->UnLock();
         return -1;
     }
 
     m_status = TASK_CANCEL;
-    m_co_mtx->UnLock();
     return 0;
 }
 

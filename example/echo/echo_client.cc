@@ -1,13 +1,13 @@
 #include <bbt/conet/conet.hpp>
 #include "echoconnection.hpp"
 
-class EchoClient:
+class EchoMultiClient:
     public bbt::conet::TcpClient
 {
 public:
 
-    EchoClient(std::shared_ptr<bbt::conet::detail::EventLoop> eventloop):bbt::conet::TcpClient(eventloop) {}
-    virtual ~EchoClient() {}
+    EchoMultiClient(std::shared_ptr<bbt::conet::detail::EventLoop> eventloop):bbt::conet::TcpClient(eventloop) {}
+    virtual ~EchoMultiClient() {}
 
     virtual ConnectResult OnConnect(int socket, const bbt::conet::IPAddress& addr)
     {
@@ -34,9 +34,10 @@ int main()
 {
     auto eventloop = std::make_shared<bbt::conet::detail::EventLoop>(100, true);
 
-    EchoClient client{eventloop};
+    EchoMultiClient client{eventloop};
 
-    client.CoConnect("127.0.0.1", 10101);
-
-    sleep(120);
+    while (true) {
+        client.CoConnect("127.0.0.1", 10101);
+        std::this_thread::sleep_for(bbt::clock::ms(100));
+    }
 }

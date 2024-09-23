@@ -6,8 +6,15 @@
 namespace bbt::network::conet::detail
 {
 
+int64_t Connection::_GenId()
+{
+    static std::atomic_int64_t _id{0};
+    return (++_id);
+}
+
 Connection::Connection(std::shared_ptr<TIEventLoop> evloop, int fd, const IPAddress& addr, int timeout):
     m_event_loop(evloop),
+    m_conn_id(_GenId()),
     m_socket(fd),
     m_timeout(timeout),
     m_last_active_time(bbt::clock::now<>()),
@@ -67,31 +74,38 @@ const IPAddress& Connection::GetPeerAddr() const
     return m_peer_addr;
 }
 
+int64_t Connection::GetId() const
+{
+    return m_conn_id;
+}
+
 void Connection::Close()
 {
-    std::unique_lock<std::mutex> lock{m_mutex};
-
     /**
      * 如果有正在进行的发送事件，设置连接状态，等发送事件完成后再关闭连接
      * 如果没有正在进行的发送事件，直接Shutdown
      */
 
+    std::unique_lock<std::mutex> lock(m_mutex);
     if (IsClosed())
         return;
 
     if (!m_send_event_is_in_progress && m_send_event < 0) {
         _Shutdown();
+        lock.unlock();
+        OnClose();
         return;
     }
 
     m_run_status = CONN_CLOSE;
-
 }
 
 void Connection::Shutdown()
 {
-    std::lock_guard<std::mutex> lock{m_mutex};
+    std::unique_lock<std::mutex> lock{m_mutex};
     _Shutdown();
+    lock.unlock();
+    OnClose();
 }
 
 void Connection::_Shutdown()
@@ -104,12 +118,12 @@ void Connection::_Shutdown()
     Assert(m_socket >= 0);
     ::close(m_socket);
     m_socket = -1;
-    OnClose();
 }
 
 
 std::optional<Errcode> Connection::Send(const bbt::buffer::Buffer& buf)
 {
+    std::unique_lock<std::mutex> lock{m_mutex};
     if (IsClosed()) {
         return Errcode{"connection is closed!"};
     }
@@ -119,7 +133,7 @@ std::optional<Errcode> Connection::Send(const bbt::buffer::Buffer& buf)
     if (append_len != buf.DataSize())
         return Errcode{"output buffer not enough!"};
 
-    if (!m_send_event_is_in_progress.compare_exchange_strong(not_in_progress, true)) {
+    if (m_send_event_is_in_progress == true) {
         return std::nullopt;
     }
 
@@ -129,37 +143,36 @@ std::optional<Errcode> Connection::Send(const bbt::buffer::Buffer& buf)
 int Connection::_OnSendEvent(std::shared_ptr<bbt::buffer::Buffer> buffer, short event)
 {
     size_t len = 0;
+    bool continue_send = false;
 
     std::unique_lock<std::mutex> lock{m_mutex};
     if (m_run_status == CONN_DISCONNECTED)
         return -1;
 
-    lock.unlock();
 
-    if (event & bbtco_emev_timeout) {
-    } else if(event & bbtco_emev_writeable) {
-        len = ::send(m_socket, buffer->Peek(), buffer->DataSize(), MSG_NOSIGNAL);
+    if(event & bbtco_emev_writeable) {
+        lock.unlock();
+        OnSend(::send(m_socket, buffer->Peek(), buffer->DataSize(), MSG_NOSIGNAL));
+        lock.lock();
+
+        // Close状态或者output buffer没有数据，就不注册新的发送事件了
+        continue_send = (m_run_status != CONN_DISCONNECTED && m_output_buffer.DataSize() > 0);
     }
 
-    OnSend(len);
-
-    lock.lock();
     /**
      * 发送完毕后，若缓冲区还有数据且连接没有处于断开状态，继续注册发送事件
      * 若处于close状态，则Shutdown
      */
-    if (m_run_status == CONN_DISCONNECTED || m_output_buffer.DataSize() <= 0) {
-        auto eventloop = _GetEventLoop();
-        if (eventloop)
-            eventloop->UnRegistEvent(m_send_event);
-        
-        m_send_event = -1;
-        m_send_event_is_in_progress.exchange(false);
+    m_send_event = -1;
+    m_send_event_is_in_progress = false;
 
-        if (m_run_status == CONN_CLOSE)
+    if (!continue_send) {
+        if (m_run_status == CONN_CLOSE) {
             _Shutdown();
+            lock.unlock();
+            OnClose();
+        }
     } else {
-        m_send_event = -1;
         _RegistASendEvent();
     }
 
@@ -174,7 +187,6 @@ int Connection::Send(const char* byte, size_t len)
 
 int Connection::_AppendOutputBuffer(const char* data, size_t len)
 {
-    std::lock_guard<std::mutex> _(m_output_buffer_mtx);
     auto before = m_output_buffer.DataSize();
     m_output_buffer.WriteString(data, len);
     auto after_size = m_output_buffer.DataSize();
@@ -186,25 +198,21 @@ int Connection::_AppendOutputBuffer(const char* data, size_t len)
 
 std::optional<Errcode> Connection::_RegistASendEvent()
 {
-    AssertWithInfo(m_send_event_is_in_progress.load(), "output buffer must be free!");
+    AssertWithInfo(!m_send_event_is_in_progress, "output buffer must be free!");
     AssertWithInfo(m_send_event <= 0, "must no send event!");
-    auto buffer_sptr = std::make_shared<bbt::buffer::Buffer>();
-    {
-        std::lock_guard<std::mutex> _(m_output_buffer_mtx);
-        buffer_sptr->Swap(m_output_buffer);
-    }
 
-    auto wkthis = weak_from_this();
+    auto buffer_sptr = std::make_shared<bbt::buffer::Buffer>();
+    buffer_sptr->Swap(m_output_buffer);
+
+    auto pthis = shared_from_this();
     auto eventloop = _GetEventLoop();
     if (eventloop == nullptr)
         return Errcode{"eventloop is released!"};
     
+    m_send_event_is_in_progress = true;
     m_send_event = eventloop->RegistEvent(shared_from_this(), bbtco_emev_writeable | bbtco_emev_finalize, -1,
-    [wkthis, buffer_sptr](auto, short event){
-        auto pthis = wkthis.lock();
-        if (pthis == nullptr) return false;
-        if (event & bbtco_emev_writeable)
-            pthis->_OnSendEvent(buffer_sptr, event);
+    [pthis, buffer_sptr](auto, short event){
+        pthis->_OnSendEvent(buffer_sptr, event);
 
         return false;
     });

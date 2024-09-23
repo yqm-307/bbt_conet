@@ -15,6 +15,7 @@ public:
     virtual void Shutdown() = 0;
     virtual bool IsClosed() const = 0;
     virtual int  GetFd() const = 0;
+    virtual int64_t GetId() const = 0;
 };
 
 } // namespace bbt::network::conet::interface

@@ -59,6 +59,8 @@ public:
      * @return const IPAddress& 
      */
     virtual const IPAddress&        GetPeerAddr() const final;
+
+    virtual int64_t                 GetId() const final;
 protected:
 
     /**
@@ -108,21 +110,22 @@ private:
 
     /* 连接事件 */
     std::optional<Errcode>          _Recv();
+    static int64_t                  _GenId();
 private:
     std::weak_ptr<TIEventLoop>      m_event_loop;
+    const int64_t                   m_conn_id{-1};
     int                             m_socket{-1};
     IPAddress                       m_peer_addr;
     const int                       m_timeout{-1};  // 连接空闲关闭超时
     bbt::clock::Timestamp<>         m_last_active_time;
-    ConnStatus                      m_run_status{CONN_DEFAULT};
+    std::atomic_int                 m_run_status{CONN_DEFAULT};
     std::mutex                      m_mutex;    // 状态管理的锁
 
-    volatile EventId                m_send_event{-1};
+    std::atomic_int64_t             m_send_event{-1};
     EventId                         m_main_event{-1};
 
     bbt::buffer::Buffer             m_output_buffer;
-    std::atomic_bool                m_send_event_is_in_progress{false};  // 是否正在进行发送事件
-    std::mutex                      m_output_buffer_mtx;
+    bool                            m_send_event_is_in_progress{false};  // 是否正在进行发送事件
     const int                       m_input_buffer_len{4096};
     char*                           m_input_buffer{nullptr};
 

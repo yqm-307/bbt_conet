@@ -42,6 +42,7 @@ public:
     virtual void OnError(const bbt::network::Errcode& err) override
     {
         printf("[echoconn][onerror] %s\n", err.CWhat());
+        Close();
     }
 private:
     size_t n_recv{0};
